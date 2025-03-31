@@ -490,8 +490,79 @@ const TeamSwipeCards = () => {
                   </div>
                 </div>
                 
-                {/* El resto del contenido de la tarjeta se mantiene igual */}
-                {/* ... */}
+                {/* Badge para especialidad buscada */}
+  {isSpecialtyNeeded(currentProfile.mainSpecialty) && (
+    <div className="mb-3 bg-green-50 text-green-700 p-2 rounded-md text-sm border border-green-200 flex items-center">
+      <span className="font-medium">Especialidad que buscas para tu equipo</span>
+    </div>
+  )}
+  
+  {/* Destacar la descripción del perfil */}
+  <div className="mb-4 p-3 bg-gray-50 rounded-md border border-gray-100">
+    <h3 className="text-sm font-medium text-gray-700 mb-1">Acerca de:</h3>
+    <p className="text-gray-600">{currentProfile.bio || "El usuario no ha proporcionado una descripción."}</p>
+  </div>
+  
+  {/* Especialidades secundarias */}
+  {currentProfile.secondarySpecialties && currentProfile.secondarySpecialties.length > 0 && (
+    <div className="mb-3">
+      <h3 className="text-sm font-medium text-gray-700 mb-1">También conoce:</h3>
+      <div className="flex flex-wrap gap-1">
+        {currentProfile.secondarySpecialties.map((skill, index) => (
+          <span key={index} className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs flex items-center">
+            {specialtyIcons[skill] || null}
+            {skill}
+          </span>
+        ))}
+      </div>
+    </div>
+  )}
+  
+  {/* Portfolio link */}
+  {currentProfile.portfolioLink && (
+    <div className="mb-3">
+      <h3 className="text-sm font-medium text-gray-700 mb-1">Portfolio:</h3>
+      <a 
+        href={currentProfile.portfolioLink} 
+        target="_blank" 
+        rel="noopener noreferrer" 
+        className="text-blue-600 hover:underline text-sm break-words"
+      >
+        {currentProfile.portfolioLink}
+      </a>
+    </div>
+  )}
+  
+  {/* Intereses de equipo */}
+  {currentProfile.lookingFor && currentProfile.lookingFor.length > 0 && (
+    <div className="mb-2">
+      <h3 className="text-sm font-medium text-gray-700 mb-1">Está buscando:</h3>
+      <div className="flex flex-wrap gap-1">
+        {currentProfile.lookingFor.map((specialty, index) => (
+          <span 
+            key={index} 
+            className={`px-2 py-0.5 rounded-full text-xs ${
+              specialty === currentUser.mainSpecialty 
+                ? 'bg-purple-100 text-purple-800 font-medium' 
+                : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            {specialtyIcons[specialty] || null}
+            {specialty}
+          </span>
+        ))}
+      </div>
+    </div>
+  )}
+  
+  {/* Compatibilidad */}
+  {currentUser && currentUser.mainSpecialty && 
+   currentProfile.lookingFor && 
+   currentProfile.lookingFor.includes(currentUser.mainSpecialty) && (
+    <div className="mt-3 bg-purple-50 text-purple-700 p-2 rounded-md text-sm border border-purple-200">
+      <span className="font-medium">¡Está buscando tu especialidad!</span>
+    </div>
+  )}
               </div>
             </div>
           ) : (
