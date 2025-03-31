@@ -5,6 +5,7 @@ import { getDoc, doc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useNavigate } from 'react-router';
 import Header from '../components/Header';
+import TeamCandidates from '../components/TeamCandidates';
 import { FaCamera, FaEdit, FaSave, FaTimes, FaChevronRight, FaCheck } from 'react-icons/fa';
 
 const Profile = () => {
@@ -471,6 +472,7 @@ const Profile = () => {
                     )}
                   </div>
                 </div>
+                <TeamCandidates/>
               </div>
             </>
           )}
