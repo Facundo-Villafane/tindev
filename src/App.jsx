@@ -30,7 +30,7 @@ const router = createBrowserRouter([
     element: <ProtectedRoute><Messages /></ProtectedRoute>
   },
   {
-    path: "/chat/:matchId",
+    path: "/chat/:chatId",
     element: <ProtectedRoute><Chat /></ProtectedRoute>
   }
 ]);
