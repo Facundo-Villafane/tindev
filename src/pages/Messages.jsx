@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { db, auth } from '../firebase/config';
-import { doc, getDoc, onSnapshot, collection, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, collection, getDocs, query, where, setDoc, updateDoc } from 'firebase/firestore';
 import Header from '../components/Header';
 import { FaCircle } from 'react-icons/fa';
 

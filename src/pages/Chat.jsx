@@ -1,8 +1,10 @@
 // src/pages/Chat.jsx
 import { useState, useEffect, useRef } from 'react';
+// CORREGIDO: Importar desde react-router-dom, no react-router
 import { useParams, Link } from 'react-router';
 import { db, auth } from '../firebase/config';
-import { doc, getDoc, collection, addDoc, onSnapshot, query, orderBy, updateDoc, serverTimestamp } from 'firebase/firestore';
+// AÑADIDO: Necesitamos importar setDoc para crear el chat si no existe
+import { doc, getDoc, collection, addDoc, onSnapshot, query, orderBy, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { FaArrowLeft, FaPaperPlane } from 'react-icons/fa';
 
 const Chat = () => {
@@ -14,33 +16,39 @@ const Chat = () => {
   const messagesEndRef = useRef(null);
   const currentUser = auth.currentUser;
   // Añade un estado para manejar errores
-const [error, setError] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchChatData = async () => {
       try {
         setLoading(true);
         // Obtener documento del chat
-        const chatDoc = await getDoc(doc(db, 'chats', chatId));
+        const chatRef = doc(db, 'chats', chatId);
+        const chatDoc = await getDoc(chatRef);
 
         if (!chatDoc.exists()) {
-            // Si el chat no existe, crearlo
-            await setDoc(doc(db, 'chats', chatId), {
-              participants: [], // Se actualizará después
-              createdAt: new Date(),
-              lastMessage: null,
-              lastMessageTime: null
-            });
-            
-            // Cargar el chat nuevamente
-            const updatedChatDoc = await getDoc(doc(db, 'chats', chatId));
-            if (!updatedChatDoc.exists()) {
-              throw new Error("No se pudo crear el chat");
-            }
+          // Si el chat no existe, crearlo
+          // Primero, extraer los IDs de usuario del chatId (formato: "userId1_userId2")
+          const userIds = chatId.split('_');
+          if (userIds.length !== 2) {
+            throw new Error("Formato de chatId inválido");
           }
-        
-        if (chatDoc.exists()) {
-          const chatData = chatDoc.data();
+          
+          await setDoc(chatRef, {
+            participants: userIds,
+            createdAt: new Date(),
+            lastMessage: null,
+            lastMessageTime: null
+          });
+          
+          // Cargar el chat nuevamente
+          const updatedChatDoc = await getDoc(chatRef);
+          if (!updatedChatDoc.exists()) {
+            throw new Error("No se pudo crear el chat");
+          }
+          
+          // Continuar con los datos actualizados
+          const chatData = updatedChatDoc.data();
           
           // Identificar al otro usuario
           const otherUserId = chatData.participants.find(id => id !== currentUser.uid);
@@ -53,31 +61,60 @@ const [error, setError] = useState(null);
               id: otherUserId,
               ...otherUserDoc.data()
             });
+          } else {
+            throw new Error("No se pudo encontrar la información del otro usuario");
+          }
+        } else {
+          // El chat existe, continuar normalmente
+          const chatData = chatDoc.data();
+          
+          // Identificar al otro usuario
+          const otherUserId = chatData.participants.find(id => id !== currentUser.uid);
+          if (!otherUserId) {
+            throw new Error("No se pudo identificar al otro usuario");
           }
           
-          // Escuchar mensajes
-          const messagesRef = collection(db, 'chats', chatId, 'messages');
-          const q = query(messagesRef, orderBy('timestamp', 'asc'));
+          // Obtener información del otro usuario
+          const otherUserDoc = await getDoc(doc(db, 'devs', otherUserId));
           
-          const unsubscribe = onSnapshot(q, (snapshot) => {
-            const messageList = [];
-            snapshot.forEach((doc) => {
-              messageList.push({
-                id: doc.id,
-                ...doc.data()
-              });
+          if (otherUserDoc.exists()) {
+            setOtherUser({
+              id: otherUserId,
+              ...otherUserDoc.data()
             });
-            
-            setMessages(messageList);
-            setLoading(false);
-            scrollToBottom();
+          } else {
+            console.warn("Información del otro usuario no encontrada");
+          }
+        }
+        
+        // Configurar la escucha de mensajes (independiente de si el chat acaba de ser creado o ya existía)
+        const messagesRef = collection(db, 'chats', chatId, 'messages');
+        const q = query(messagesRef, orderBy('timestamp', 'asc'));
+        
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const messageList = [];
+          snapshot.forEach((doc) => {
+            messageList.push({
+              id: doc.id,
+              ...doc.data()
+            });
           });
           
-          return unsubscribe;
-        }
+          setMessages(messageList);
+          setLoading(false);
+          scrollToBottom();
+        }, (error) => {
+          console.error("Error listening to messages:", error);
+          setError("Error al cargar los mensajes");
+          setLoading(false);
+        });
+        
+        return unsubscribe;
       } catch (error) {
-        console.error("Error fetching chat data:", error);
+        console.error("Error al cargar el chat:", error);
+        setError("Ocurrió un error al cargar la conversación");
         setLoading(false);
+        return () => {}; // Retornar una función vacía para satisfacer el efecto
       }
     };
     
@@ -101,6 +138,12 @@ const [error, setError] = useState(null);
     if (!inputMessage.trim()) return;
     
     try {
+      // Asegurarnos de que tenemos un otherUser antes de continuar
+      if (!otherUser) {
+        console.error("No se puede enviar mensaje: información del otro usuario no disponible");
+        return;
+      }
+      
       const messageData = {
         text: inputMessage,
         senderId: currentUser.uid,
@@ -125,43 +168,110 @@ const [error, setError] = useState(null);
       
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        const updatedChats = (userData.chats || []).map(chat => {
-          if (chat.chatId === chatId) {
-            return {
-              ...chat,
-              lastMessage: inputMessage,
-              lastMessageTime: new Date()
-            };
-          }
-          return chat;
-        });
+        const userChats = userData.chats || [];
         
-        await updateDoc(userRef, { chats: updatedChats });
+        // Buscar si ya existe una referencia a este chat
+        const existingChatIndex = userChats.findIndex(chat => chat.chatId === chatId);
+        
+        if (existingChatIndex >= 0) {
+          // Actualizar el chat existente
+          userChats[existingChatIndex] = {
+            ...userChats[existingChatIndex],
+            lastMessage: inputMessage,
+            lastMessageTime: new Date()
+          };
+        } else {
+          // Añadir nuevo chat
+          userChats.push({
+            chatId: chatId,
+            with: otherUser.id,
+            withName: otherUser.name || "Usuario",
+            withPhoto: otherUser.photoURL,
+            withSpecialty: otherUser.mainSpecialty || "",
+            isMatch: true,
+            lastMessage: inputMessage,
+            lastMessageTime: new Date()
+          });
+        }
+        
+        await updateDoc(userRef, { chats: userChats });
       }
       
       if (otherUserDoc.exists()) {
         const otherUserData = otherUserDoc.data();
-        const updatedChats = (otherUserData.chats || []).map(chat => {
-          if (chat.chatId === chatId) {
-            return {
-              ...chat,
-              lastMessage: inputMessage,
-              lastMessageTime: new Date()
-            };
-          }
-          return chat;
-        });
+        const otherUserChats = otherUserData.chats || [];
         
-        await updateDoc(otherUserRef, { chats: updatedChats });
+        // Buscar si ya existe una referencia a este chat
+        const existingChatIndex = otherUserChats.findIndex(chat => chat.chatId === chatId);
+        
+        if (existingChatIndex >= 0) {
+          // Actualizar el chat existente
+          otherUserChats[existingChatIndex] = {
+            ...otherUserChats[existingChatIndex],
+            lastMessage: inputMessage,
+            lastMessageTime: new Date()
+          };
+        } else {
+          // Añadir nuevo chat
+          otherUserChats.push({
+            chatId: chatId,
+            with: currentUser.uid,
+            withName: currentUser.displayName || "Usuario",
+            withPhoto: currentUser.photoURL,
+            withSpecialty: currentUser.mainSpecialty || "",
+            isMatch: true,
+            lastMessage: inputMessage,
+            lastMessageTime: new Date()
+          });
+        }
+        
+        await updateDoc(otherUserRef, { chats: otherUserChats });
       }
       
       // Limpiar input
       setInputMessage('');
     } catch (error) {
-      console.error("Error sending message:", error);
+      console.error("Error al enviar mensaje:", error);
+      // Mostrar un mensaje de error al usuario si es necesario
     }
   };
 
+  // Si hay un error, mostrar una pantalla de error
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col">
+        <header className="bg-white shadow-sm p-4 flex items-center">
+          <Link to="/messages" className="text-gray-800">
+            <FaArrowLeft size={20} />
+          </Link>
+          <h2 className="ml-4 font-medium text-red-500">Error</h2>
+        </header>
+        
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-md p-6 text-center max-w-md">
+            <p className="text-red-500 mb-4">{error}</p>
+            <p className="text-gray-600 mb-4">
+              Lo sentimos, hubo un problema al cargar la conversación. Por favor, inténtalo nuevamente.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 mr-2"
+            >
+              Reintentar
+            </button>
+            <Link
+              to="/messages"
+              className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 inline-block"
+            >
+              Volver a mensajes
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado de carga
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col">
@@ -181,6 +291,7 @@ const [error, setError] = useState(null);
     );
   }
 
+  // Renderizar la interfaz de chat normal
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       <header className="bg-white shadow-sm p-4 flex items-center sticky top-0 z-10">
