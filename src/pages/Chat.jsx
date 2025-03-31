@@ -13,12 +13,31 @@ const Chat = () => {
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef(null);
   const currentUser = auth.currentUser;
+  // Añade un estado para manejar errores
+const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchChatData = async () => {
       try {
+        setLoading(true);
         // Obtener documento del chat
         const chatDoc = await getDoc(doc(db, 'chats', chatId));
+
+        if (!chatDoc.exists()) {
+            // Si el chat no existe, crearlo
+            await setDoc(doc(db, 'chats', chatId), {
+              participants: [], // Se actualizará después
+              createdAt: new Date(),
+              lastMessage: null,
+              lastMessageTime: null
+            });
+            
+            // Cargar el chat nuevamente
+            const updatedChatDoc = await getDoc(doc(db, 'chats', chatId));
+            if (!updatedChatDoc.exists()) {
+              throw new Error("No se pudo crear el chat");
+            }
+          }
         
         if (chatDoc.exists()) {
           const chatData = chatDoc.data();
