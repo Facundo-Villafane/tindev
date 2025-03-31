@@ -5,6 +5,9 @@ import { db, auth } from '../firebase/config';
 import { collection, getDocs, query, where, doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { FaHeart, FaTimes, FaUndo, FaCode, FaPaintBrush, FaBriefcase, FaGamepad, FaMusic, FaQuestion } from 'react-icons/fa';
 import Header from './Header';
+import { useNavigate } from 'react-router';
+import { FaComment } from 'react-icons/fa';
+import { setDoc } from 'firebase/firestore';
 
 const TeamSwipeCards = () => {
   // Estados se mantienen igual...
@@ -14,6 +17,25 @@ const TeamSwipeCards = () => {
   const [swipeHistory, setSwipeHistory] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const [matchNotification, setMatchNotification] = useState({
+    show: false,
+    user: null
+  });
+
+  const navigate = useNavigate();
+
+  const closeMatchNotification = () => {
+    setMatchNotification({
+      show: false,
+      user: null
+    });
+  };
+
+  const goToChat = (userId) => {
+    navigate(`/chat/${userId}`);
+    closeMatchNotification();
+  };
 
   // Iconos para las especialidades
   const specialtyIcons = {
@@ -126,6 +148,7 @@ const TeamSwipeCards = () => {
         const currentUserDoc = await getDoc(userRef);
         const swipedUserDoc = await getDoc(swipedUserRef);
         
+        
         const currentUserData = currentUserDoc.data();
         const swipedUserData = swipedUserDoc.data();
         
@@ -188,6 +211,64 @@ const TeamSwipeCards = () => {
         }
         // Caso 2: El usuario ya te hizo swipe y tú le haces swipe ahora (es un match)
         else if (youAreCandidate) {
+          setMatchNotification({
+            show: true,
+            user: {
+              id: swipedUser.id,
+              name: swipedUserData.name,
+              photo: swipedUserData.photoURL,
+              specialty: swipedUserData.mainSpecialty
+            }
+          });
+
+          // Crear una conversación entre usuarios
+  const chatId = [currentAuthUser.uid, swipedUser.id].sort().join('_');
+  const chatRef = doc(db, 'chats', chatId);
+  
+  // Verificar si la conversación ya existe
+  const chatDoc = await getDoc(chatRef);
+  
+  if (!chatDoc.exists()) {
+    // Crear nueva conversación
+    await setDoc(chatRef, {
+      participants: [currentAuthUser.uid, swipedUser.id],
+      createdAt: new Date(),
+      lastMessage: null,
+      lastMessageTime: null
+    });
+    
+    // Añadir referencia a esta conversación para ambos usuarios
+    // Primero, verificar si el usuario ya tiene un array de chats
+    if (!currentUserData.chats) {
+      await updateDoc(userRef, { chats: [] });
+    }
+    if (!swipedUserData.chats) {
+      await updateDoc(swipedUserRef, { chats: [] });
+    }
+    
+    // Luego añadir la referencia del chat
+    await updateDoc(userRef, {
+      chats: arrayUnion({
+        chatId: chatId,
+        with: swipedUser.id,
+        withName: swipedUserData.name,
+        withPhoto: swipedUserData.photoURL,
+        withSpecialty: swipedUserData.mainSpecialty,
+        isMatch: true
+      })
+    });
+    
+    await updateDoc(swipedUserRef, {
+      chats: arrayUnion({
+        chatId: chatId,
+        with: currentAuthUser.uid,
+        withName: currentUserData.name,
+        withPhoto: currentUserData.photoURL,
+        withSpecialty: currentUserData.mainSpecialty,
+        isMatch: true
+      })
+    });
+  }
           // Es un match! Verificar si ya tienes un equipo
           if (currentTeam.length > 0) {
             // Ya tienes un equipo, añadir al usuario como candidato para tu equipo
@@ -439,6 +520,47 @@ const TeamSwipeCards = () => {
       <div className="min-h-screen bg-gray-100 flex flex-col">
         {/* El Header ahora está fuera del contenedor flex centrado */}
         <Header />
+        {/* Modal de match */}
+{matchNotification.show && matchNotification.user && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-70">
+    <div className="bg-white rounded-lg shadow-xl overflow-hidden max-w-md w-full transform animate-fadeIn">
+      <div className="bg-gradient-to-r from-purple-500 to-blue-500 py-6 px-4 text-center">
+        <h2 className="text-2xl font-bold text-white mb-2">¡Es un Match!</h2>
+        <p className="text-white opacity-90">Ambos han mostrado interés en trabajar juntos</p>
+      </div>
+      
+      <div className="p-6">
+        <div className="flex flex-col items-center mb-6">
+          <img 
+            src={matchNotification.user.photo || "https://via.placeholder.com/100"} 
+            alt={matchNotification.user.name}
+            className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg"
+          />
+          <h3 className="text-xl font-bold mt-3">{matchNotification.user.name}</h3>
+          <span className="bg-blue-100 text-blue-800 text-sm px-3 py-1 rounded-full mt-2">
+            {matchNotification.user.specialty}
+          </span>
+        </div>
+        
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => goToChat(matchNotification.user.id)}
+            className="w-full bg-green-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-600 transition flex items-center justify-center"
+          >
+            <FaComment className="mr-2" /> Enviar mensaje
+          </button>
+          
+          <button
+            onClick={closeMatchNotification}
+            className="w-full bg-gray-200 text-gray-800 py-3 px-4 rounded-lg font-medium hover:bg-gray-300 transition"
+          >
+            Continuar explorando
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
         <div className="flex-1 flex flex-col items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mt-20"></div>
           <p className="mt-4 text-gray-600">Buscando desarrolladores para tu equipo...</p>
