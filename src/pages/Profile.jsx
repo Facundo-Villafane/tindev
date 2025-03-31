@@ -501,7 +501,7 @@ const Profile = () => {
         
         {/* Opciones adicionales */}
         <div className="mt-6 bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="border-b">
+          {/*<div className="border-b">
             <button 
               onClick={() => navigate('/my-projects')} 
               className="w-full py-3 px-4 flex justify-between items-center hover:bg-gray-50"
@@ -509,7 +509,7 @@ const Profile = () => {
               <span className="text-gray-700">Mis Proyectos</span>
               <FaChevronRight className="text-gray-400" />
             </button>
-          </div>
+          </div>*/}
           <div className="border-b">
             <button 
               onClick={() => navigate('/messages')} 
