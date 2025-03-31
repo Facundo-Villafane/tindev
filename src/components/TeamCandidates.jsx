@@ -1,7 +1,7 @@
 // src/components/TeamCandidates.jsx
 import { useState, useEffect } from 'react';
 import { db, auth } from '../firebase/config';
-import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { FaCheck, FaTimes, FaUserPlus } from 'react-icons/fa';
 
 const TeamCandidates = () => {

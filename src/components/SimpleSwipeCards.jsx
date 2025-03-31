@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useSwipeable } from 'react-swipeable';
 import { db, auth } from '../firebase/config';
-import { collection, getDocs, query, where, doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { FaHeart, FaTimes, FaUndo, FaCode, FaPaintBrush, FaBriefcase, FaGamepad, FaMusic, FaQuestion } from 'react-icons/fa';
 import Header from './Header';
 import { useNavigate } from 'react-router';
@@ -351,7 +351,7 @@ const TeamSwipeCards = () => {
                   await updateDoc(doc(db, 'devs', memberId), {
                     currentTeam: arrayUnion(newTeamMember),
                     // Eliminar de candidatos
-                    teamCandidates: firestore.FieldValue.arrayRemove(existingCandidate)
+                    teamCandidates: arrayRemove(existingCandidate)
                   });
                 }
                 

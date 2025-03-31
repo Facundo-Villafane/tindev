@@ -1,12 +1,13 @@
 // src/pages/Profile.jsx
 import { useState, useEffect } from 'react';
 import { auth, db, storage } from '../firebase/config';
-import { getDoc, doc, updateDoc } from 'firebase/firestore';
+import { getDoc, doc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useNavigate } from 'react-router';
 import Header from '../components/Header';
 import TeamCandidates from '../components/TeamCandidates';
 import { FaCamera, FaEdit, FaSave, FaTimes, FaChevronRight, FaCheck } from 'react-icons/fa';
+import { arrayUnion, arrayRemove } from 'firebase/firestore';
 
 const Profile = () => {
   // Estados para datos del perfil
@@ -16,7 +17,6 @@ const Profile = () => {
   const [bio, setBio] = useState('');
   const [portfolioLink, setPortfolioLink] = useState('');
   const [contactInfo, setContactInfo] = useState('');
-  
   
   // Especialidades y búsqueda de equipo
   const [mainSpecialty, setMainSpecialty] = useState('');
@@ -45,85 +45,83 @@ const Profile = () => {
   
   const navigate = useNavigate();
 
+  // Primer useEffect: Configura un listener en tiempo real para los datos del equipo
   useEffect(() => {
-    const fetchUserProfile = async () => {
-      const user = auth.currentUser;
-      if (user) {
-        // Datos básicos de auth
-        setName(user.displayName || '');
-        setPhotoURL(user.photoURL || '');
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    
+    // Configurar listener para cambios en el documento del usuario
+    const unsubscribe = onSnapshot(doc(db, 'devs', currentUser.uid), (userDoc) => {
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
         
-        // Datos adicionales de Firestore
-        try {
-          const userDoc = await getDoc(doc(db, 'devs', user.uid));
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
-            setBio(userData.bio || '');
-            setPortfolioLink(userData.portfolioLink || '');
-            setContactInfo(userData.contactInfo || '');
-            
-            // Especialidades y equipo
-            setMainSpecialty(userData.mainSpecialty || '');
-            setSecondarySpecialties(userData.secondarySpecialties || []);
-            setLookingFor(userData.lookingFor || []);
-            setCurrentTeam(userData.currentTeam || []);
-          }
-        } catch (error) {
-          console.error("Error al obtener datos del perfil:", error);
-          showNotification('Error al cargar el perfil', 'error');
-        }
+        // Actualizar datos de equipo en tiempo real
+        setCurrentTeam(userData.currentTeam || []);
+        
+        // También actualizar otras propiedades relevantes
+        setName(userData.name || currentUser.displayName || '');
+        setPhotoURL(userData.photoURL || currentUser.photoURL || '');
+        setBio(userData.bio || '');
+        setPortfolioLink(userData.portfolioLink || '');
+        setContactInfo(userData.contactInfo || '');
+        setMainSpecialty(userData.mainSpecialty || '');
+        setSecondarySpecialties(userData.secondarySpecialties || []);
+        setLookingFor(userData.lookingFor || []);
+        
+        // Cargar likes pendientes en tiempo real
+        loadPendingLikes(userData, currentUser.uid);
+      }
+    }, (error) => {
+      console.error("Error al obtener actualizaciones en tiempo real:", error);
+    });
+    
+    // Limpiar listener al desmontar
+    return () => unsubscribe();
+  }, []);
 
-        // Añade esto para cargar los likes pendientes
-      try {
-        const userDoc = await getDoc(doc(db, 'devs', user.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          
-          // Obtener los IDs de usuarios a los que has dado like
-          const teamInterests = userData.teamInterests || [];
-          
-          // Para cada usuario, verificar si es un match pendiente
-          const pendingUsers = [];
-          
-          for (const userId of teamInterests) {
-            // Verificar si este usuario ya está en tu equipo
-            const isInTeam = (userData.currentTeam || []).some(
-              member => member.id === userId
-            );
+  // Función para cargar likes pendientes
+  const loadPendingLikes = async (userData, currentUserId) => {
+    try {
+      // Obtener los IDs de usuarios a los que has dado like
+      const teamInterests = userData.teamInterests || [];
+      
+      // Para cada usuario, verificar si es un match pendiente
+      const pendingUsers = [];
+      
+      for (const userId of teamInterests) {
+        // Verificar si este usuario ya está en tu equipo
+        const isInTeam = (userData.currentTeam || []).some(
+          member => member.id === userId
+        );
+        
+        if (!isInTeam) {
+          // Obtener datos del usuario
+          const otherUserDoc = await getDoc(doc(db, 'devs', userId));
+          if (otherUserDoc.exists()) {
+            const otherUserData = otherUserDoc.data();
             
-            if (!isInTeam) {
-              // Obtener datos del usuario
-              const otherUserDoc = await getDoc(doc(db, 'devs', userId));
-              if (otherUserDoc.exists()) {
-                const otherUserData = otherUserDoc.data();
-                
-                // Verificar si el otro usuario te ha dado like (match)
-                const hasLikedYou = (otherUserData.teamInterests || []).includes(user.uid);
-                
-                // Si no es un match completo, es un like pendiente
-                if (!hasLikedYou) {
-                  pendingUsers.push({
-                    id: userId,
-                    name: otherUserData.name || "Usuario",
-                    photoURL: otherUserData.photoURL,
-                    mainSpecialty: otherUserData.mainSpecialty || "Sin especialidad",
-                    bio: otherUserData.bio || "Sin descripción"
-                  });
-                }
-              }
+            // Verificar si el otro usuario te ha dado like (match)
+            const hasLikedYou = (otherUserData.teamInterests || []).includes(currentUserId);
+            
+            // Si no es un match completo, es un like pendiente
+            if (!hasLikedYou) {
+              pendingUsers.push({
+                id: userId,
+                name: otherUserData.name || "Usuario",
+                photoURL: otherUserData.photoURL,
+                mainSpecialty: otherUserData.mainSpecialty || "Sin especialidad",
+                bio: otherUserData.bio || "Sin descripción"
+              });
             }
           }
-          
-          setPendingLikes(pendingUsers);
         }
-      } catch (error) {
-        console.error("Error al obtener likes pendientes:", error);
       }
-      }
-    };
-
-    fetchUserProfile();
-  }, []);
+      
+      setPendingLikes(pendingUsers);
+    } catch (error) {
+      console.error("Error al obtener likes pendientes:", error);
+    }
+  };
 
   const handlePhotoChange = (e) => {
     if (e.target.files[0]) {
@@ -198,9 +196,11 @@ const Profile = () => {
         mainSpecialty,
         secondarySpecialties,
         lookingFor,
-        currentTeam,
         lastUpdated: new Date()
       };
+      
+      // No incluir currentTeam en la actualización para evitar sobrescribir datos del equipo
+      // que podrían haber cambiado mientras se editaba el perfil
       
       // Actualizar datos en Firestore
       await updateDoc(doc(db, 'devs', user.uid), profileData);
@@ -296,13 +296,13 @@ const Profile = () => {
             className={`py-2 px-4 font-medium ${activeSection === 'team' ? 'text-blue-500 border-b-2 border-blue-500' : 'text-gray-500'}`}
             onClick={() => setActiveSection('team')}
           >
-            Mi Equipo
+            Mi Equipo {currentTeam.length > 0 && <span className="ml-1 bg-green-500 text-white text-xs px-1.5 rounded-full">{currentTeam.length}</span>}
           </button>
           <button 
             className={`py-2 px-4 font-medium ${activeSection === 'pending' ? 'text-blue-500 border-b-2 border-blue-500' : 'text-gray-500'}`}
             onClick={() => setActiveSection('pending')}
           >
-            Matches Pendientes
+            Pendientes {pendingLikes.length > 0 && <span className="ml-1 bg-yellow-500 text-white text-xs px-1.5 rounded-full">{pendingLikes.length}</span>}
           </button>
         </div>
         
@@ -534,52 +534,52 @@ const Profile = () => {
             </>
           ) : activeSection === 'pending' && (
             <div className="space-y-4">
-  <h3 className="font-medium text-lg">Desarrolladores a los que te interesa</h3>
-  
-  {pendingLikes.length === 0 ? (
-    <div className="text-center py-8 bg-gray-50 rounded-lg">
-      <p className="text-gray-500">No tienes matches pendientes.</p>
-      <p className="text-sm text-gray-400 mt-2">Haz swipe a la derecha para mostrar interés en más perfiles.</p>
-    </div>
-  ) : (
-    <div className="space-y-3">
-      {pendingLikes.map((user) => (
-        <div key={user.id} className="flex items-start p-4 bg-white rounded-lg shadow-sm border border-gray-100">
-          <img 
-            src={user.photoURL || 'https://via.placeholder.com/50?text=Dev'} 
-            alt={user.name}
-            className="w-14 h-14 rounded-full object-cover mr-4"
-          />
-          <div className="flex-1">
-            <div className="flex justify-between items-start">
-              <div>
-                <h4 className="font-medium text-gray-900">{user.name}</h4>
-                <div className="flex items-center mt-1">
-                  <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full">
-                    {user.mainSpecialty}
-                  </span>
-                  <span className="ml-2 text-xs text-gray-500">
-                    <span className="inline-block w-2 h-2 bg-yellow-400 rounded-full mr-1"></span>
-                    Pendiente
-                  </span>
+              <h3 className="font-medium text-lg">Desarrolladores a los que te interesa</h3>
+              
+              {pendingLikes.length === 0 ? (
+                <div className="text-center py-8 bg-gray-50 rounded-lg">
+                  <p className="text-gray-500">No tienes matches pendientes.</p>
+                  <p className="text-sm text-gray-400 mt-2">Haz swipe a la derecha para mostrar interés en más perfiles.</p>
                 </div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingLikes.map((user) => (
+                    <div key={user.id} className="flex items-start p-4 bg-white rounded-lg shadow-sm border border-gray-100">
+                      <img 
+                        src={user.photoURL || 'https://via.placeholder.com/50?text=Dev'} 
+                        alt={user.name}
+                        className="w-14 h-14 rounded-full object-cover mr-4"
+                      />
+                      <div className="flex-1">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-medium text-gray-900">{user.name}</h4>
+                            <div className="flex items-center mt-1">
+                              <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full">
+                                {user.mainSpecialty}
+                              </span>
+                              <span className="ml-2 text-xs text-gray-500">
+                                <span className="inline-block w-2 h-2 bg-yellow-400 rounded-full mr-1"></span>
+                                Pendiente
+                              </span>
+                            </div>
+                          </div>
+                          <span className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-full border border-purple-100">
+                            Esperando respuesta
+                          </span>
+                        </div>
+                        
+                        <p className="text-sm text-gray-600 mt-2 line-clamp-2">{user.bio}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <div className="text-center mt-6">
+                <p className="text-sm text-gray-500">Cuando un desarrollador te corresponda, aparecerá en tu lista de matches.</p>
               </div>
-              <span className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-full border border-purple-100">
-                Esperando respuesta
-              </span>
             </div>
-            
-            <p className="text-sm text-gray-600 mt-2 line-clamp-2">{user.bio}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  )}
-  
-  <div className="text-center mt-6">
-    <p className="text-sm text-gray-500">Cuando un desarrollador te corresponda, aparecerá en tu lista de matches.</p>
-  </div>
-</div>
           )}
           
           {/* Botones de acción */}
@@ -608,15 +608,6 @@ const Profile = () => {
         
         {/* Opciones adicionales */}
         <div className="mt-6 bg-white rounded-lg shadow-md overflow-hidden">
-          {/*<div className="border-b">
-            <button 
-              onClick={() => navigate('/my-projects')} 
-              className="w-full py-3 px-4 flex justify-between items-center hover:bg-gray-50"
-            >
-              <span className="text-gray-700">Mis Proyectos</span>
-              <FaChevronRight className="text-gray-400" />
-            </button>
-          </div>*/}
           <div className="border-b">
             <button 
               onClick={() => navigate('/messages')} 
